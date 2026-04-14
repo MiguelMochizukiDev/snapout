@@ -130,6 +130,7 @@ class ConsoleUI:
             self._print_color(self.dim, "  Package summary:")
             for name, count in sorted(counts.items()):
                 print(f"  {self.white}{name:<20}{self.reset} {self.dim}{count} version(s){self.reset}")
+        print()
 
     def _get_revision_size_bytes(self, name: str, revision: str) -> int:
         """Get size of a snap revision in bytes."""
