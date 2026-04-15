@@ -86,16 +86,28 @@ class ConsoleUI:
         self._print_color(self.blue, "--------------------------------------------------")
         print()
 
-    def show_active(self, rows: list[SnapRow]) -> None:
-        print(f"  {self.bold}{'Name':<20} {'Version':<15} {'Revision':<10} Notes{self.reset}")
-        self._print_color(self.gray, "  ------------------------------------------------------------------")
-        for row in rows:
-            print(
-                f"  {self.white}{row.name:<20}{self.reset} "
-                f"{self.cyan}{row.version:<15}{self.reset} "
-                f"{self.yellow}{row.revision:<10}{self.reset} "
-                f"{self.dim}active{self.reset}"
-            )
+    def show_active(self, rows: list[SnapRow], show_indices: bool = True) -> None:
+        if show_indices:
+            print(f"  {self.bold}{'#':<4} {'Name':<20} {'Version':<15} {'Revision':<10} Notes{self.reset}")
+            self._print_color(self.gray, "  ------------------------------------------------------------------")
+            for idx, row in enumerate(rows, start=1):
+                print(
+                    f"  {self.dim}{idx:<4}{self.reset} "
+                    f"{self.white}{row.name:<20}{self.reset} "
+                    f"{self.cyan}{row.version:<15}{self.reset} "
+                    f"{self.yellow}{row.revision:<10}{self.reset} "
+                    f"{self.dim}active{self.reset}"
+                )
+        else:
+            print(f"  {self.bold}{'Name':<20} {'Version':<15} {'Revision':<10} Notes{self.reset}")
+            self._print_color(self.gray, "  ------------------------------------------------------------------")
+            for row in rows:
+                print(
+                    f"  {self.white}{row.name:<20}{self.reset} "
+                    f"{self.cyan}{row.version:<15}{self.reset} "
+                    f"{self.yellow}{row.revision:<10}{self.reset} "
+                    f"{self.dim}active{self.reset}"
+                )
         print()
         self._print_color(self.blue, f"  Total: {len(rows)} packages")
         print()

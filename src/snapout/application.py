@@ -96,15 +96,18 @@ class SnapoutApplication:
 
         if active:
             self.ui.section(f"Active Packages ({len(active)})", cli_mode)
-            self.ui.show_active(active)
+            self.ui.show_active(active, show_indices=False)
 
         if old:
             self.ui.section(f"Old Versions ({len(old)})", cli_mode)
             self.ui.show_old(old)
-            # Show smart suggestions for old versions
             self.ui.show_smart_suggestions(old)
 
-        if not active and not old:
+        # Show unified indexed list
+        if active and old:
+            self.ui.section("All Items (for reference)", cli_mode)
+            self._show_unified_list(rows)
+        elif not active and not old:
             self.ui.success("  No Snap packages found")
 
         return ActionResult(code=0, skip_continue_prompt=False)
@@ -201,22 +204,52 @@ class SnapoutApplication:
 
         return self._confirm_and_purge(rows, "ALL old Snap versions")
 
+    def _show_unified_list(self, rows: list[SnapRow], category: str = "all") -> None:
+        """Show a unified indexed list of all items for selection."""
+        print(f"  {self.ui.bold}{'#':<4} {'Name':<20} {'Type':<10} {'Details'}{self.ui.reset}")
+        self.ui._print_color(self.ui.gray, "  ------------------------------------------------------------------")
+
+        old_rows = []
+        for idx, row in enumerate(rows, start=1):
+            if row.notes == "disabled":
+                old_rows.append(row)
+                size_bytes = self.ui._get_revision_size_bytes(row.name, row.revision)
+                size_str = self.ui._format_size(size_bytes)
+                details = f"rev {row.revision} ({size_str})"
+                type_str = f"{self.ui.yellow}old{self.ui.reset}"
+            else:
+                details = f"v{row.version} (rev {row.revision})"
+                type_str = f"{self.ui.cyan}active{self.ui.reset}"
+
+            print(
+                f"  {self.ui.dim}{idx:<4}{self.ui.reset} "
+                f"{self.ui.white}{row.name:<20}{self.ui.reset} "
+                f"{type_str:<10} "
+                f"{self.ui.dim}{details}{self.ui.reset}"
+            )
+
+        print()
+
+        # Show summary stats
+        active_count = len([r for r in rows if r.notes != "disabled"])
+        old_count = len(old_rows)
+        if old_count > 0:
+            total_size = sum(self.ui._get_revision_size_bytes(r.name, r.revision) for r in old_rows)
+            size_str = self.ui._format_size(total_size)
+            print(f"  {self.ui.dim}Summary: {self.ui.white}{active_count}{self.ui.dim} active, {self.ui.yellow}{old_count}{self.ui.dim} old versions ({self.ui.cyan}{size_str}{self.ui.dim} reclaimable){self.ui.reset}")
+
+            # Show smart suggestions if in "all" or "old" mode
+            if category in ["all", "old"]:
+                self.ui.show_smart_suggestions(old_rows)
+        else:
+            print(f"  {self.ui.dim}Summary: {self.ui.white}{active_count}{self.ui.dim} active packages{self.ui.reset}")
+
+        print()
+
     def _interactive_selection(self, rows: list[SnapRow], category: str) -> ActionResult:
         """Handle interactive selection and removal."""
-        # Separate active and old if showing all
-        if category == "all":
-            active = [r for r in rows if r.notes != "disabled"]
-            old = [r for r in rows if r.notes == "disabled"]
-            if active:
-                self.ui.show_active(active)
-            if old:
-                self.ui.show_old(old)
-                self.ui.show_smart_suggestions(old)
-        elif category == "active":
-            self.ui.show_active(rows)
-        else:  # old
-            self.ui.show_old(rows)
-            self.ui.show_smart_suggestions(rows)
+        # Show unified indexed list for selection
+        self._show_unified_list(rows, category)
 
         if len(rows) == 1:
             return self._handle_single_selection(rows[0], category)
@@ -249,13 +282,13 @@ class SnapoutApplication:
         self.ui.print_bold("  About to remove:")
         total_size = 0
         for row in selected:
-            if category == "old":
+            if row.notes == "disabled":  # old version
                 size_bytes = self.ui._get_revision_size_bytes(row.name, row.revision)
                 total_size += size_bytes
                 size_str = self.ui._format_size(size_bytes)
                 print(f"  {self.ui.white}{row.name:<20}{self.ui.reset} revision {self.ui.yellow}{row.revision}{self.ui.reset} ({self.ui.cyan}{size_str}{self.ui.reset})")
-            else:
-                print(f"  {self.ui.white}{row.name}{self.ui.reset}")
+            else:  # active package
+                print(f"  {self.ui.white}{row.name}{self.ui.reset} (active package)")
 
         if total_size > 0:
             print(f"\n  {self.ui.green}💾 Total space to free: {self.ui._format_size(total_size)}{self.ui.reset}")
@@ -264,11 +297,23 @@ class SnapoutApplication:
             self.ui.cancel()
             return ActionResult()
 
-        # Determine if we're removing packages or revisions
-        if category == "old":
-            return self._remove_revisions_with_progress(selected)
-        else:
-            return self._remove_packages_with_progress(selected)
+        # Process removals - separate packages from revisions
+        packages_to_remove = [r for r in selected if r.notes != "disabled"]
+        revisions_to_remove = [r for r in selected if r.notes == "disabled"]
+
+        # Remove old revisions first
+        if revisions_to_remove:
+            result = self._remove_revisions_with_progress(revisions_to_remove)
+            if result.code != 0:
+                return result
+
+        # Then remove active packages
+        if packages_to_remove:
+            result = self._remove_packages_with_progress(packages_to_remove)
+            if result.code != 0:
+                return result
+
+        return ActionResult()
 
     def _handle_single_selection(self, row: SnapRow, category: str) -> ActionResult:
         """Handle removal of a single item."""
